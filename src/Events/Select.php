@@ -112,7 +112,7 @@ final class Select implements EventInterface
      *
      * @var int
      */
-    private int $selectTimeout = 100000000;
+    private int $selectTimeout = self::MAX_SELECT_TIMOUT_US;
 
     /**
      * Next run time of the timer.
@@ -125,6 +125,13 @@ final class Select implements EventInterface
      * @var ?callable
      */
     private $errorHandler = null;
+
+    /**
+     * Select timeout.
+     *
+     * @var int
+     */
+    const MAX_SELECT_TIMOUT_US = 800000;
 
     /**
      * Construct.
@@ -357,11 +364,12 @@ final class Select implements EventInterface
     {
         $this->nextTickTime = $nextTickTime;
         if ($nextTickTime == 0) {
-            $this->selectTimeout = 10000000;
+            // Swow will affect the signal interruption characteristics of stream_select,
+            // so a shorter timeout should be used to detect signals.
+            $this->selectTimeout = self::MAX_SELECT_TIMOUT_US;
             return;
         }
-        $timeNow = microtime(true);
-        $this->selectTimeout = max((int)(($nextTickTime - $timeNow) * 1000000), 0);
+        $this->selectTimeout = min(max((int)(($nextTickTime - microtime(true)) * 1000000), 0), self::MAX_SELECT_TIMOUT_US);
     }
 
     /**
@@ -419,6 +427,7 @@ final class Select implements EventInterface
                 $this->tick();
             }
 
+            // The $this->signalEvents are empty under Windows, make sure not to call pcntl_signal_dispatch.
             if ($this->signalEvents) {
                 // Calls signal handlers for pending signals
                 pcntl_signal_dispatch();
